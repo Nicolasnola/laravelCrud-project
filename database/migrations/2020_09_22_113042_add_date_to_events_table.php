@@ -15,6 +15,7 @@ class AddDateToEventsTable extends Migration
     {
         Schema::table('events', function (Blueprint $table) {
             $table->dateTime('date');
+            
         });
     }
 
@@ -27,6 +28,7 @@ class AddDateToEventsTable extends Migration
     {
         Schema::table('events', function (Blueprint $table) {
             $table->dropColumn('date');
+            
         });
     }
 }

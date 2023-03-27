@@ -6,27 +6,55 @@ use Illuminate\Http\Request;
 
 use App\Models\Event;
 use App\Models\User;
+use Carbon\Carbon;
 
 class EventController extends Controller
 {
-    
-    public function index() {
+    public function index()
+{
+    $search = request('search');
 
-        $search = request('search');
+    if ($search) {
+        $startDate = null;
+        $endDate = null;
 
-        if($search) {
+        // Verifica se o parâmetro de busca é uma data válida ou intervalo de datas
+        if (preg_match("/^\d{1,2}\/\d{1,2}\/\d{4}( - \d{1,2}\/\d{1,2}\/\d{4})?$/", $search)) {
+            $searchDates = explode(' - ', $search);
+            $startDate = Carbon::createFromFormat('d/m/Y', $searchDates[0])->format('Y-m-d');
+            if (count($searchDates) > 1) {
+                $endDate = Carbon::createFromFormat('d/m/Y', $searchDates[1])->addDays(1)->format('Y-m-d');
+            } else {
+                $endDate = Carbon::createFromFormat('d/m/Y', $searchDates[0])->addDays(1)->format('Y-m-d');
+            }
+        }
 
-            $events = Event::where([
-                ['title', 'like', '%'.$search.'%']
-            ])->get();
-
+        // Se a data for válida, adiciona a condição de busca por intervalo de datas
+        if ($startDate && $endDate) {
+            $events = Event::whereBetween('date', [$startDate, $endDate])
+                ->orWhere('title', 'like', '%' . $search . '%')
+                ->orWhere('description', 'like', '%' . $search . '%')
+                ->orWhereRaw('JSON_CONTAINS(items, \'["' . $search . '"]\')')
+                ->orWhereHas('users', function ($query) use ($search) {
+                    $query->where('name', 'like', '%' . $search . '%');
+                })
+                ->get();
         } else {
-            $events = Event::all();
-        }        
-    
-        return view('welcome',['events' => $events, 'search' => $search]);
-
+            $events = Event::where('title', 'like', '%' . $search . '%')
+                ->orWhere('description', 'like', '%' . $search . '%')
+                ->orWhereRaw('JSON_CONTAINS(items, \'["' . $search . '"]\')')
+                ->orWhereHas('users', function ($query) use ($search) {
+                    $query->where('name', 'like', '%' . $search . '%');
+                })
+                ->get();
+        }
+    } else {
+        $events = Event::all();
     }
+
+    return view('welcome', ['events' => $events, 'search' => $search]);
+}
+    
 
     public function create() {
         return view('events.create');
@@ -176,5 +204,16 @@ class EventController extends Controller
         return redirect('/dashboard')->with('msg', 'Você saiu com sucesso do evento: ' . $event->title);
 
     }
+    public function removeUser(Event $event, User $user){
+
+        $event->users()->detach($user);
+    
+        
+    
+        return redirect("/events/{$event->id}")->with('msg', 'Participante saiu com sucesso do evento');
+    
+    }
+
+
 
 }
