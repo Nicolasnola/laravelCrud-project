@@ -7,53 +7,66 @@ use Illuminate\Http\Request;
 use App\Models\Event;
 use App\Models\User;
 use Carbon\Carbon;
+use Exception;
+use Illuminate\Support\Facades\DB;
 
 class EventController extends Controller
 {
+    
     public function index()
 {
-    $search = request('search');
+    $titleSearch = request('title_search');
+    $dateSearch = request('date_search');
+    $itemSearch = request('item_search');
+    $userSearch = request('user_search');
 
-    if ($search) {
-        $startDate = null;
-        $endDate = null;
+    $events = Event::query();
 
-        // Verifica se o parâmetro de busca é uma data válida ou intervalo de datas
-        if (preg_match("/^\d{1,2}\/\d{1,2}\/\d{4}( - \d{1,2}\/\d{1,2}\/\d{4})?$/", $search)) {
-            $searchDates = explode(' - ', $search);
+    if ($titleSearch) {
+        $events->where('title', 'like', '%' . $titleSearch . '%');
+    }
+
+    if ($dateSearch) {
+        if (strpos($dateSearch, 'antes de') !== false) {
+            $searchDate = str_replace('antes de', '', $dateSearch);
+            $startDate = Carbon::createFromFormat('d/m/Y', trim($searchDate))->format('Y-m-d');
+            $before = $events->where('date', '<', $startDate)->get();
+        } else if (strpos($dateSearch, 'após') !== false) {
+            $searchDate = str_replace('após', '', $dateSearch);
+            $startDate = Carbon::createFromFormat('d/m/Y', trim($searchDate))->format('Y-m-d');
+            $after = $events->where('date', '>', $startDate)->get();
+        } else {
+            $searchDates = explode(' - ', $dateSearch);
             $startDate = Carbon::createFromFormat('d/m/Y', $searchDates[0])->format('Y-m-d');
             if (count($searchDates) > 1) {
                 $endDate = Carbon::createFromFormat('d/m/Y', $searchDates[1])->addDays(1)->format('Y-m-d');
+                $events->whereBetween('date', [$startDate, $endDate]);
             } else {
-                $endDate = Carbon::createFromFormat('d/m/Y', $searchDates[0])->addDays(1)->format('Y-m-d');
+                $events->where('date', $startDate);
             }
         }
-
-        // Se a data for válida, adiciona a condição de busca por intervalo de datas
-        if ($startDate && $endDate) {
-            $events = Event::whereBetween('date', [$startDate, $endDate])
-                ->orWhere('title', 'like', '%' . $search . '%')
-                ->orWhere('description', 'like', '%' . $search . '%')
-                ->orWhereRaw('JSON_CONTAINS(items, \'["' . $search . '"]\')')
-                ->orWhereHas('users', function ($query) use ($search) {
-                    $query->where('name', 'like', '%' . $search . '%');
-                })
-                ->get();
-        } else {
-            $events = Event::where('title', 'like', '%' . $search . '%')
-                ->orWhere('description', 'like', '%' . $search . '%')
-                ->orWhereRaw('JSON_CONTAINS(items, \'["' . $search . '"]\')')
-                ->orWhereHas('users', function ($query) use ($search) {
-                    $query->where('name', 'like', '%' . $search . '%');
-                })
-                ->get();
-        }
-    } else {
-        $events = Event::all();
     }
 
-    return view('welcome', ['events' => $events, 'search' => $search]);
+    if ($itemSearch) {
+        $searchItems = explode(',', $itemSearch);
+        $events->where(function($query) use ($searchItems) {
+            foreach ($searchItems as $searchItem) {
+                $query->whereRaw('JSON_CONTAINS(items, \'["' . $searchItem . '"]\')');
+            }
+        });
+    }
+
+    if ($userSearch) {
+        $events->whereHas('users', function ($query) use ($userSearch) {
+            $query->where('name', 'like', '%' . $userSearch . '%');
+        });
+    }
+
+    $events = $events->get();
+
+    return view('welcome', ['events' => $events, 'titleSearch' => $titleSearch, 'dateSearch' => $dateSearch, 'itemSearch' => $itemSearch, 'userSearch' => $userSearch]);
 }
+
     
 
     public function create() {
